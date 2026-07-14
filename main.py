@@ -29,9 +29,8 @@ def parse_args():
     p = argparse.ArgumentParser(description="Trích text PDF, chuẩn hóa, tách câu và NER tiếng Việt")
     p.add_argument("--pdf", default="lich_trieu_hien_chuong_loai_chi_phan_huy_chu_tap_1_ocr.pdf",
                    help="Đường dẫn file PDF đầu vào")
-    p.add_argument("--code", default="LTHCLC",
+    p.add_argument("--code", default="HVQ_036",
                    help="Mã tác phẩm dùng trong sentence_id và tên file output")
-    p.add_argument("--volume", type=int, default=1, help="Số tập (phần giữa của sentence_id)")
     p.add_argument("--start-page", type=int, default=None,
                    help="Trang PDF bắt đầu (mặc định: tự phát hiện theo bookmark)")
     p.add_argument("--end-page", type=int, default=None,
@@ -82,7 +81,7 @@ def main():
     t0 = time.time()
     with open(sent_path, "w", encoding="utf-8") as f_sent:
         for i, sent in enumerate(sentences, start=1):
-            sid = f"{args.code}_{args.volume:03d}_{i:06d}"
+            sid = f"{args.code}_{i:06d}"
             f_sent.write(f"{sid}\t{sent}\n")
             records.append({
                 "sentence_id": sid,
