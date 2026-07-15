@@ -11,6 +11,7 @@ Kết quả trong thư mục output/:
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -19,6 +20,9 @@ from pipeline.extract import detect_content_range, extract_pages
 from pipeline.normalize import normalize_page_text
 from pipeline.segment import split_sentences
 from pipeline.ner import extract_entities
+from pipeline.correct import (
+    correct_text, GeminiClient, load_cache, save_cache, write_corrections,
+)
 
 # Console Windows cần UTF-8 để in tiếng Việt
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -37,6 +41,12 @@ def parse_args():
                    help="Trang PDF kết thúc (mặc định: tự phát hiện theo bookmark)")
     p.add_argument("--outdir", default="output", help="Thư mục ghi kết quả")
     p.add_argument("--limit", type=int, default=0, help="Chỉ xử lý N câu đầu (0 = tất cả, dùng để thử nhanh)")
+    p.add_argument("--correct", action="store_true",
+                   help="Bật hiệu đính OCR bằng Gemini trước khi tách câu")
+    p.add_argument("--model", default="gemini-2.5-flash",
+                   help="Model Gemini dùng khi --correct")
+    p.add_argument("--no-cache", action="store_true",
+                   help="Không dùng cache hiệu đính (luôn gọi API)")
     return p.parse_args()
 
 
@@ -44,6 +54,17 @@ def main():
     args = parse_args()
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
+
+    corr_client = corr_cache = None
+    corr_records = []
+    cache_path = str(outdir / "cache" / "gemini.json")
+    if args.correct:
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            sys.exit("Thiếu GEMINI_API_KEY. Đặt: export GEMINI_API_KEY=...")
+        corr_client = GeminiClient(api_key)
+        corr_cache = {} if args.no_cache else load_cache(cache_path)
+        print(f"[+] Hiệu đính OCR bằng Gemini ({args.model})")
 
     # 0) Xác định khoảng trang nội dung chính theo bookmark của PDF
     auto_start, auto_end, chapters = detect_content_range(args.pdf)
@@ -67,8 +88,18 @@ def main():
     sentences = []
     for page_no, raw in pages:
         clean = normalize_page_text(raw)
-        if clean:
-            sentences.extend(split_sentences(clean))
+        if not clean:
+            continue
+        if args.correct:
+            clean, recs = correct_text(clean, corr_client, args.model, corr_cache)
+            corr_records.extend(recs)
+        sentences.extend(split_sentences(clean))
+    if args.correct:
+        if not args.no_cache:
+            save_cache(cache_path, corr_cache)
+        corr_path = outdir / f"{args.code}_corrections.jsonl"
+        write_corrections(str(corr_path), corr_records)
+        print(f"      -> {len(corr_records)} đoạn hiệu đính: {corr_path}")
     if args.limit:
         sentences = sentences[: args.limit]
     print(f"      -> {len(sentences)} câu")

@@ -22,6 +22,16 @@ python main.py --pdf <file.pdf> --start-page 30 --end-page 500
 python main.py --pdf <file.pdf> --code HVQ_036 --outdir output
 ```
 
+Bật hiệu đính OCR bằng Gemini (cần `GEMINI_API_KEY`), chạy trước bước tách câu:
+
+```bash
+export GEMINI_API_KEY=...
+python3 main.py --pdf <file.pdf> --code <MÃ>_corr --correct [--model gemini-2.5-flash] [--no-cache]
+```
+
+Thêm output khi bật `--correct`: `<MÃ>_corr_corrections.jsonl` (cặp đoạn gốc→đã sửa)
+và cache `output/cache/gemini.json` (tái lập, tránh gọi lại API).
+
 Dependencies (no requirements.txt in repo): `PyMuPDF` (imported as `fitz`) and `underthesea`.
 
 ```bash
@@ -45,6 +55,7 @@ There is no test suite, linter, or build step. PDFs are gitignored (`*.pdf`).
 3. **`segment.py`** — `split_sentences()` splits each normalized block with underthesea's `sent_tokenize`, treating `\n` block edges as hard sentence boundaries, and drops fragments that are too short or contain no letters.
 
 4. **`ner.py`** — `extract_entities()` merges two sources: the general **underthesea CRF model** (`_model_entities`, yields PER/LOC/ORG from BIO tags) and a **rule/gazetteer layer** (`_rule_entities`) tuned for historical Vietnamese that the general model misses: `TME` (dates incl. can-chi cycles, niên hiệu, reigns), `DYNASTY`, `TITLE` (official ranks), `NUM`, plus rule-based `LOC`/`PER`. Overlapping spans are resolved by **longer-span-wins, then a fixed priority** (`_PRIORITY`: TME > DYNASTY > TITLE > model > rule-LOC > rule-PER > NUM). Internal labels `LOC_RULE`/`PER_RULE` are renamed to `LOC`/`PER` on output.
+- **`correct.py`** (optional, `--correct`) — sits between normalize and segment; sends each normalized page in `<=2500`-char chunks to Gemini via `correct_text()`/`GeminiClient` to fix OCR spelling/tone errors and restore sentence-ending punctuation before segmentation. A length-ratio guard (`within_length_guard`, default 30%) rejects corrections that drift too far in length (keeps the original chunk instead). Results are cached on disk keyed by a hash of `(model, chunk)` (`cache_key`/`load_cache`/`save_cache` at `output/cache/gemini.json`) so reruns don't re-call the API. API errors fall back to the original chunk (`fallback_error`) rather than crashing the pipeline. Every chunk's original→corrected pair and action is written to `<code>_corrections.jsonl` via `write_corrections`.
 
 ### Working in this codebase
 
