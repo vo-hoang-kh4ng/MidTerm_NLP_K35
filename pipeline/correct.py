@@ -6,6 +6,8 @@ dấu câu ở mức đoạn văn để tách câu sạch hơn. Thiết kế cho
 (dependency injection) nên phần điều phối test được mà không gọi API thật.
 """
 
+import hashlib
+
 
 def chunk_text(page_text, max_chars=2500):
     """Cắt text (đã normalize) thành các chunk <= max_chars theo ranh giới block.
@@ -27,3 +29,16 @@ def chunk_text(page_text, max_chars=2500):
     if buf:
         chunks.append("\n".join(buf))
     return chunks
+
+
+def within_length_guard(original, corrected, max_ratio=0.3):
+    """True nếu độ dài bản sửa lệch <= max_ratio so với gốc và không rỗng."""
+    if not corrected.strip():
+        return False
+    base = max(len(original), 1)
+    return abs(len(corrected) - len(original)) / base <= max_ratio
+
+
+def cache_key(model, chunk):
+    """SHA-256 hex của (model, chunk) — khóa cache ổn định, phân biệt model."""
+    return hashlib.sha256((model + "\n" + chunk).encode("utf-8")).hexdigest()

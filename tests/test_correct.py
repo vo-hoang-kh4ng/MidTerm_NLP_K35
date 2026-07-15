@@ -22,3 +22,25 @@ def test_chunk_keeps_oversized_block_whole():
 
 def test_chunk_empty_returns_empty():
     assert chunk_text("   \n  \n") == []
+
+
+from pipeline.correct import within_length_guard, cache_key
+
+
+def test_guard_accepts_small_change():
+    assert within_length_guard("Viet Nam ta", "Việt Nam ta") is True
+
+
+def test_guard_rejects_big_shrink():
+    assert within_length_guard("x" * 100, "x" * 50) is False
+
+
+def test_guard_rejects_empty():
+    assert within_length_guard("abc", "   ") is False
+
+
+def test_cache_key_stable_and_model_sensitive():
+    k1 = cache_key("gemini-2.5-flash", "abc")
+    k2 = cache_key("gemini-2.5-flash", "abc")
+    k3 = cache_key("gemini-2.5-pro", "abc")
+    assert k1 == k2 and k1 != k3 and len(k1) == 64
