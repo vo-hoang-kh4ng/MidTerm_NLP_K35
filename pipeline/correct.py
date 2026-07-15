@@ -60,3 +60,43 @@ def save_cache(path, cache):
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(cache, f, ensure_ascii=False, indent=2)
+
+
+CORRECTION_PROMPT = (
+    "Bạn là công cụ hiệu đính lỗi OCR cho văn bản lịch sử tiếng Việt. "
+    "Hãy sửa: lỗi chính tả, sai dấu thanh, từ bị dính hoặc tách sai, và "
+    "khôi phục dấu chấm ở cuối câu. TUYỆT ĐỐI KHÔNG dịch, KHÔNG tóm tắt, "
+    "KHÔNG thêm/bớt hay diễn giải nội dung, KHÔNG đổi văn phong. Giữ nguyên "
+    "tên riêng, số, năm và niên hiệu, trừ khi chúng rõ ràng là ký tự OCR bị méo. "
+    "Chỉ trả về đúng văn bản đã sửa, không kèm lời dẫn hay giải thích.\n\n"
+    "Văn bản cần sửa:\n"
+)
+
+
+def build_prompt(chunk):
+    """Ghép chỉ dẫn hiệu đính với đoạn văn cần sửa."""
+    return CORRECTION_PROMPT + chunk
+
+
+def correct_text(page_text, client, model, cache, max_ratio=0.3):
+    """Hiệu đính text một trang theo từng chunk; trả (text_đã_sửa, records)."""
+    out_parts = []
+    records = []
+    for chunk in chunk_text(page_text):
+        key = cache_key(model, chunk)
+        if key in cache:
+            corrected, action = cache[key], "cache_hit"
+        else:
+            try:
+                resp = client.generate(build_prompt(chunk), model)
+            except Exception:
+                corrected, action = chunk, "fallback_error"
+            else:
+                if within_length_guard(chunk, resp, max_ratio):
+                    corrected, action = resp, "corrected"
+                else:
+                    corrected, action = chunk, "kept_original_length_guard"
+                cache[key] = corrected
+        out_parts.append(corrected)
+        records.append({"original": chunk, "corrected": corrected, "action": action})
+    return "\n".join(out_parts), records

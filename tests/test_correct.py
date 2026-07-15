@@ -63,3 +63,57 @@ def test_load_corrupt_returns_empty(tmp_path):
     p = tmp_path / "bad.json"
     p.write_text("{not json", encoding="utf-8")
     assert load_cache(str(p)) == {}
+
+
+from pipeline.correct import build_prompt, correct_text
+
+
+class FakeClient:
+    """Client giả: trả về theo map, hoặc raise nếu chunk nằm trong `errors`."""
+    def __init__(self, mapping=None, errors=None):
+        self.mapping = mapping or {}
+        self.errors = errors or set()
+        self.calls = 0
+
+    def generate(self, prompt, model):
+        self.calls += 1
+        for original, corrected in self.mapping.items():
+            if original in prompt:
+                if original in self.errors:
+                    raise RuntimeError("api down")
+                return corrected
+        return prompt  # không đổi
+
+
+def test_build_prompt_contains_chunk_and_rules():
+    p = build_prompt("Vỉệt Nam")
+    assert "Vỉệt Nam" in p
+    assert "OCR" in p
+
+
+def test_correct_text_applies_correction_and_caches():
+    client = FakeClient(mapping={"Vỉệt Nam": "Việt Nam"})
+    cache = {}
+    out, recs = correct_text("Vỉệt Nam", client, "m", cache)
+    assert out == "Việt Nam"
+    assert recs[0]["action"] == "corrected"
+    # lần 2 dùng cache, không gọi thêm
+    out2, recs2 = correct_text("Vỉệt Nam", client, "m", cache)
+    assert out2 == "Việt Nam" and recs2[0]["action"] == "cache_hit"
+    assert client.calls == 1
+
+
+def test_correct_text_guard_keeps_original():
+    client = FakeClient(mapping={"abcdefghij": "x"})  # rút ngắn quá nhiều
+    out, recs = correct_text("abcdefghij", client, "m", {})
+    assert out == "abcdefghij"
+    assert recs[0]["action"] == "kept_original_length_guard"
+
+
+def test_correct_text_fallback_on_error():
+    client = FakeClient(mapping={"boom": "boom"}, errors={"boom"})
+    cache = {}
+    out, recs = correct_text("boom", client, "m", cache)
+    assert out == "boom"
+    assert recs[0]["action"] == "fallback_error"
+    assert cache == {}  # lỗi thì không cache
