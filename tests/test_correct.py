@@ -44,3 +44,22 @@ def test_cache_key_stable_and_model_sensitive():
     k2 = cache_key("gemini-2.5-flash", "abc")
     k3 = cache_key("gemini-2.5-pro", "abc")
     assert k1 == k2 and k1 != k3 and len(k1) == 64
+
+
+from pipeline.correct import load_cache, save_cache
+
+
+def test_cache_roundtrip(tmp_path):
+    p = str(tmp_path / "sub" / "gemini.json")
+    save_cache(p, {"k": "đã sửa"})
+    assert load_cache(p) == {"k": "đã sửa"}
+
+
+def test_load_missing_returns_empty(tmp_path):
+    assert load_cache(str(tmp_path / "none.json")) == {}
+
+
+def test_load_corrupt_returns_empty(tmp_path):
+    p = tmp_path / "bad.json"
+    p.write_text("{not json", encoding="utf-8")
+    assert load_cache(str(p)) == {}

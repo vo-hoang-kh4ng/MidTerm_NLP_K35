@@ -7,6 +7,8 @@ dấu câu ở mức đoạn văn để tách câu sạch hơn. Thiết kế cho
 """
 
 import hashlib
+import json
+import os
 
 
 def chunk_text(page_text, max_chars=2500):
@@ -42,3 +44,19 @@ def within_length_guard(original, corrected, max_ratio=0.3):
 def cache_key(model, chunk):
     """SHA-256 hex của (model, chunk) — khóa cache ổn định, phân biệt model."""
     return hashlib.sha256((model + "\n" + chunk).encode("utf-8")).hexdigest()
+
+
+def load_cache(path):
+    """Đọc cache JSON; thiếu file hoặc hỏng -> {}."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def save_cache(path, cache):
+    """Ghi cache ra JSON UTF-8, tạo thư mục cha nếu cần."""
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(cache, f, ensure_ascii=False, indent=2)
