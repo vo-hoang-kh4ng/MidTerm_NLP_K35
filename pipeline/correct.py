@@ -9,6 +9,7 @@ dấu câu ở mức đoạn văn để tách câu sạch hơn. Thiết kế cho
 import hashlib
 import json
 import os
+import time
 
 
 def chunk_text(page_text, max_chars=2500):
@@ -100,3 +101,33 @@ def correct_text(page_text, client, model, cache, max_ratio=0.3):
         out_parts.append(corrected)
         records.append({"original": chunk, "corrected": corrected, "action": action})
     return "\n".join(out_parts), records
+
+
+class GeminiClient:
+    """Adapter mỏng quanh SDK google-genai (import lười để test không cần SDK)."""
+
+    def __init__(self, api_key):
+        from google import genai  # lazy: chỉ cần khi chạy thật
+        self._client = genai.Client(api_key=api_key)
+
+    def generate(self, prompt, model, retries=3, sleep=time.sleep):
+        last = None
+        for attempt in range(retries):
+            try:
+                resp = self._client.models.generate_content(
+                    model=model, contents=prompt
+                )
+                return resp.text
+            except Exception as e:  # rate-limit/mạng -> backoff rồi thử lại
+                last = e
+                if attempt < retries - 1:
+                    sleep(2 ** attempt)
+        raise last
+
+
+def write_corrections(path, records):
+    """Ghi danh sách record ra file JSONL (mỗi dòng một JSON), UTF-8."""
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        for r in records:
+            f.write(json.dumps(r, ensure_ascii=False) + "\n")

@@ -124,3 +124,65 @@ def test_correct_text_fallback_on_error():
     assert out == "boom"
     assert recs[0]["action"] == "fallback_error"
     assert cache == {}  # lỗi thì không cache
+
+
+import json as _json
+from pipeline.correct import GeminiClient, write_corrections
+
+
+class FakeSleep:
+    def __init__(self):
+        self.slept = []
+
+    def __call__(self, s):
+        self.slept.append(s)
+
+
+def _make_gemini_with_underlying(underlying):
+    """Tạo GeminiClient nhưng thay _client bằng đối tượng giả (không cần SDK/API)."""
+    gc = GeminiClient.__new__(GeminiClient)
+    gc._client = underlying
+    return gc
+
+
+def test_gemini_generate_returns_text():
+    class Resp:
+        text = "đã sửa"
+
+    class Models:
+        def generate_content(self, model, contents):
+            return Resp()
+
+    class Underlying:
+        models = Models()
+
+    gc = _make_gemini_with_underlying(Underlying())
+    assert gc.generate("p", "m") == "đã sửa"
+
+
+def test_gemini_generate_retries_then_succeeds():
+    calls = {"n": 0}
+
+    class Models:
+        def generate_content(self, model, contents):
+            calls["n"] += 1
+            if calls["n"] < 2:
+                raise RuntimeError("rate limit")
+            class R: text = "ok"
+            return R()
+
+    class Underlying:
+        models = Models()
+
+    gc = _make_gemini_with_underlying(Underlying())
+    sleep = FakeSleep()
+    assert gc.generate("p", "m", retries=3, sleep=sleep) == "ok"
+    assert calls["n"] == 2 and len(sleep.slept) == 1
+
+
+def test_write_corrections_jsonl(tmp_path):
+    p = str(tmp_path / "c.jsonl")
+    write_corrections(p, [{"original": "a", "corrected": "á", "action": "corrected"}])
+    lines = open(p, encoding="utf-8").read().splitlines()
+    assert len(lines) == 1
+    assert _json.loads(lines[0])["corrected"] == "á"
