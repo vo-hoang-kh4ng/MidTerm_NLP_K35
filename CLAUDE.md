@@ -32,17 +32,25 @@ python3 main.py --pdf <file.pdf> --code <MÃ>_corr --correct [--model gemini-2.5
 Thêm output khi bật `--correct`: `<MÃ>_corr_corrections.jsonl` (cặp đoạn gốc→đã sửa)
 và cache `output/cache/gemini.json` (tái lập, tránh gọi lại API).
 
-Dependencies (no requirements.txt in repo): `PyMuPDF` (imported as `fitz`) and `underthesea`.
+**Lưu ý chi phí:** `--limit` chỉ cắt bớt *câu* sau khi đã tách, không giới hạn số
+trang gửi lên Gemini — một lần chạy `--correct --limit 40` vẫn gọi API cho
+*toàn bộ* các trang được trích. Muốn thử nghiệm rẻ, hãy giới hạn phạm vi trang
+bằng `--start-page`/`--end-page` (hoặc trỏ vào một PDF ngắn), không phải `--limit`.
+
+Dependencies: `pip install -r requirements.txt` (`PyMuPDF`, `underthesea`, `google-genai`).
+Dev/test deps: `pip install -r requirements-dev.txt` (`pytest`).
 
 ```bash
-pip install PyMuPDF underthesea
+pip install -r requirements.txt
 ```
 
 Outputs land in `output/`:
 - `<code>_sentences.txt` — one line per sentence: `sentence_id<TAB>sentence`
 - `<code>_ner.json` — list of `{sentence_id, sentence, entities: [{text, label}]}`
 
-There is no test suite, linter, or build step. PDFs are gitignored (`*.pdf`).
+Test suite: `python3 -m pytest tests/` (covers `pipeline/correct.py`; 19 tests, no
+real API calls — uses injected fake clients). No linter or build step. PDFs are
+gitignored (`*.pdf`).
 
 ## Architecture
 
