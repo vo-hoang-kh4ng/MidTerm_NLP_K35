@@ -1,3 +1,6 @@
+import pytest
+
+
 def test_pipeline_importable():
     import pipeline
     assert pipeline is not None
@@ -178,6 +181,25 @@ def test_gemini_generate_retries_then_succeeds():
     sleep = FakeSleep()
     assert gc.generate("p", "m", retries=3, sleep=sleep) == "ok"
     assert calls["n"] == 2 and len(sleep.slept) == 1
+
+
+def test_gemini_generate_exhausts_retries_and_reraises():
+    calls = {"n": 0}
+
+    class Models:
+        def generate_content(self, model, contents):
+            calls["n"] += 1
+            raise RuntimeError(f"rate limit {calls['n']}")
+
+    class Underlying:
+        models = Models()
+
+    gc = _make_gemini_with_underlying(Underlying())
+    sleep = FakeSleep()
+    with pytest.raises(RuntimeError):
+        gc.generate("p", "m", retries=3, sleep=sleep)
+    assert calls["n"] == 3
+    assert sleep.slept == [1, 2]
 
 
 def test_write_corrections_jsonl(tmp_path):
