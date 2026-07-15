@@ -134,6 +134,12 @@ _CHAR_FIXES = {
     "…": "...",
     " ": " ",
     "–": "-", "—": "-",
+    # Dấu câu full-width CJK (hay gặp ở text OCR từ sách in lẫn font Hán):
+    # đưa về ASCII để tách câu/underthesea nhận đúng ranh giới câu.
+    "，": ",", "．": ".", "。": ".", "、": ",", "；": ";", "：": ":",
+    "！": "!", "？": "?", "（": "(", "）": ")",
+    "「": '"', "」": '"', "『": '"', "』": '"',
+    "｀": "'", "･": "-",
 }
 
 
@@ -160,6 +166,11 @@ def normalize_page_text(raw_text):
         j = re.sub(r"\s+", " ", j)
         j = re.sub(r"\s+([,.;:!?)\]])", r"\1", j)
         j = re.sub(r"([(\[])\s+", r"\1", j)
+        # OCR hay dính câu: dấu kết câu liền ngay chữ hoa -> chèn khoảng trắng
+        # để underthesea nhận đúng ranh giới câu ("...dân tộc,Thời..." ->
+        # "...dân tộc, Thời..."). Chỉ chèn khi sau dấu là chữ cái HOA để tránh
+        # phá "tr.290", "G.S." hay số thập phân.
+        j = re.sub(r"([.!?,])([%s])" % _VIET_UPPER, r"\1 \2", j)
         return j.strip()
 
     # Tách trang thành các "khối" ngăn bằng \n. Tiêu đề quyển/phần bị BỎ
