@@ -105,9 +105,16 @@ def test_correct_text_applies_correction_and_caches():
 
 def test_correct_text_guard_keeps_original():
     client = FakeClient(mapping={"abcdefghij": "x"})  # rút ngắn quá nhiều
-    out, recs = correct_text("abcdefghij", client, "m", {})
+    cache = {}
+    out, recs = correct_text("abcdefghij", client, "m", cache)
     assert out == "abcdefghij"
     assert recs[0]["action"] == "kept_original_length_guard"
+    assert cache  # guard-failure vẫn được cache (ratio không đổi khi chạy lại)
+    calls_after_first = client.calls
+    out2, recs2 = correct_text("abcdefghij", client, "m", cache)
+    assert out2 == "abcdefghij"
+    assert recs2[0]["action"] == "cache_hit"
+    assert client.calls == calls_after_first  # không gọi lại API
 
 
 def test_correct_text_fallback_on_error():
