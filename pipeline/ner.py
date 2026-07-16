@@ -20,7 +20,8 @@ from underthesea import ner as uts_ner
 _UP = "A-ZĐÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴ"
 _LO = "a-zđàáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵ"
 
-_CAPWORD = rf"[{_UP}][{_LO}]+"
+# Cho phép nối âm tiết bằng gạch nối kiểu chính tả cũ: "Nguyễn-vương", "Gia-định"
+_CAPWORD = rf"[{_UP}][{_LO}]+(?:-[{_LO}]+)*"
 _CAPSEQ = rf"{_CAPWORD}(?:\s+{_CAPWORD})*"
 
 _CAN = "Giáp|Ất|Bính|Đinh|Mậu|Kỷ|Canh|Tân|Nhâm|Quý"
@@ -68,8 +69,17 @@ _TITLES = [
     "vua", "chúa",
 ]
 _TITLES.sort(key=len, reverse=True)
+
+
+def _flex(phrase):
+    """Cho phép khoảng trắng HOẶC gạch nối giữa các âm tiết của một cụm từ,
+    để khớp cả chính tả hiện đại ("tri phủ") lẫn chính tả cũ ("tri-phủ")."""
+    return r"[ -]".join(re.escape(w) for w in phrase.split(" "))
+
+
+_TITLE_ALTS = [_flex(t) for t in _TITLES]
 _TITLE_RE = re.compile(
-    r"\b(?:" + "|".join(re.escape(t) for t in _TITLES) + r")\b",
+    r"\b(?:" + "|".join(_TITLE_ALTS) + r")\b",
     re.IGNORECASE,
 )
 
@@ -81,13 +91,30 @@ _LOC_CUES = (
     "sông|núi|hồ|đầm|cửa biển|cửa|đèo|đảo|chùa|đền|miếu|quán|cầu|chợ|bến|"
     "kinh đô|kinh thành|nước|xứ|động|nguồn|ải|cung|lầu|gác|hành cung"
 )
-_LOC_RE = re.compile(rf"\b(?:{_LOC_CUES})\s+{_CAPSEQ}")
+# (?<!-): tránh khớp nhầm khi từ chỉ loại là nửa sau một từ ghép gạch nối
+# thuộc chức danh, ví dụ "tri-phủ" (chức quan) không phải "phủ" (địa danh).
+_LOC_RE = re.compile(rf"(?<!-)\b(?:{_LOC_CUES})\s+{_CAPSEQ}")
 
 # ---------------------------------------------------------------------------
 # Nhân danh sau chức danh (bổ trợ PER): "vua Lê Thánh Tông", "tướng Trần..."
+# Dùng chung bộ từ điển chức danh (_TITLES) cộng thêm vài đại từ chỉ người.
 # ---------------------------------------------------------------------------
-_PER_RE = re.compile(
-    rf"\b(?:vua|chúa|ông|bà|họ|tướng|quan|công chúa|hoàng hậu|thái tử)\s+({_CAPSEQ})"
+_PER_CUES_EXTRA = ["ông", "bà", "họ", "tướng", "quan"]
+_PER_ALT = "|".join(_TITLE_ALTS + [re.escape(w) for w in _PER_CUES_EXTRA])
+# Không dùng IGNORECASE: {_CAPSEQ} dựa vào phân biệt hoa/thường để nhận diện
+# tên riêng, bật IGNORECASE sẽ khiến nó khớp nhầm cả cụm từ thường.
+_PER_RE = re.compile(rf"(?i:\b(?:{_PER_ALT})\b)\s*,?\s+({_CAPSEQ})")
+
+# ---------------------------------------------------------------------------
+# Sửa nhãn: mô hình chung hay gán nhầm người có chức danh thành LOC/ORG
+# ("Đô đốc Pagiơ" -> LOC). Nếu span (hoặc phần ngay trước span) bắt đầu/kết
+# thúc bằng một chức danh đã biết, coi phần tên còn lại là PER.
+# ---------------------------------------------------------------------------
+_TITLE_PREFIX_RE = re.compile(
+    r"^(?:" + _PER_ALT + r")\b[\s,]+", re.IGNORECASE
+)
+_TITLE_BEFORE_RE = re.compile(
+    r"(?:" + _PER_ALT + r")\s*,?\s*$", re.IGNORECASE
 )
 
 # ---------------------------------------------------------------------------
@@ -153,6 +180,30 @@ def _rule_entities(sentence):
     return spans
 
 
+def _retitle_person(sentence, start, end, label):
+    """LOC/ORG mà chính span hoặc phần ngay trước nó là một chức danh
+    -> coi phần tên là PER (mô hình chung hay gán nhầm các trường hợp này)."""
+    if label not in ("LOC", "ORG"):
+        return start, end, label
+    text = sentence[start:end]
+    m = _TITLE_PREFIX_RE.match(text)
+    if m and m.end() < len(text):
+        return start + m.end(), end, "PER"
+    if _TITLE_BEFORE_RE.search(sentence[:start]):
+        return start, end, "PER"
+    return start, end, label
+
+
+def _trim_internal_punct(text):
+    """Cắt span tại dấu phẩy/chấm phẩy nằm giữa (không phải ở mép), giữ lại
+    phần sau cùng — sửa lỗi mô hình đôi khi gộp span qua ranh giới câu con."""
+    for ch in (",", ";"):
+        idx = text.rfind(ch)
+        if 0 < idx < len(text) - 1:
+            text = text[idx + 1:]
+    return text.strip(" ,.;:!?()[]\"'-")
+
+
 def extract_entities(sentence):
     """Trả về danh sách thực thể [{"text", "label"}] theo thứ tự xuất hiện."""
     candidates = _model_entities(sentence) + _rule_entities(sentence)
@@ -169,8 +220,9 @@ def extract_entities(sentence):
     result = []
     for start, end, label in chosen:
         label = {"LOC_RULE": "LOC", "PER_RULE": "PER"}.get(label, label)
+        start, end, label = _retitle_person(sentence, start, end, label)
         # Cắt dấu câu/khoảng trắng dính ở hai mép span
-        text = sentence[start:end].strip(" ,.;:!?()[]\"'-")
+        text = _trim_internal_punct(sentence[start:end].strip(" ,.;:!?()[]\"'-"))
         if not text:
             continue
         result.append({"text": text, "label": label})

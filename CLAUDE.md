@@ -44,9 +44,14 @@ Dev/test deps: `pip install -r requirements-dev.txt` (`pytest`).
 pip install -r requirements.txt
 ```
 
-Outputs land in `output/`:
-- `<code>_sentences.txt` — one line per sentence: `sentence_id<TAB>sentence`
+Outputs land in `output/` (per the assignment's output spec):
+- `<code>_seg.tsv` — one line per sentence: `sentence_id<TAB>sentence`
 - `<code>_ner.json` — list of `{sentence_id, sentence, entities: [{text, label}]}`
+
+For a corpus with multiple quyển/tập, each volume gets its own subdirectory
+named `<matacpham>_<chapter>/`, files prefixed the same way, e.g.:
+`output/HVQ_036/HVQ_036_LLKN/HVQ_036_LLKN_seg.tsv`. Pass the nested path via
+`--outdir` and the volume's code via `--code` to get this layout.
 
 Test suite: `python3 -m pytest tests/` (covers `pipeline/correct.py`; 19 tests, no
 real API calls — uses injected fake clients). No linter or build step. PDFs are

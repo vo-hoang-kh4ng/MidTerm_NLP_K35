@@ -5,8 +5,8 @@ Chạy:
     python main.py --pdf lich_trieu_hien_chuong_loai_chi_phan_huy_chu_tap_1_ocr.pdf
 
 Kết quả trong thư mục output/:
-    <MA>_sentences.txt : mỗi dòng "sentence_id<TAB>câu"
-    <MA>_ner.json      : [{"sentence_id", "sentence", "entities": [...]}, ...]
+    <MA>_seg.tsv  : mỗi dòng "sentence_id<TAB>câu"
+    <MA>_ner.json : [{"sentence_id", "sentence", "entities": [...]}, ...]
 """
 
 import argparse
@@ -104,7 +104,7 @@ def main():
         sentences = sentences[: args.limit]
     print(f"      -> {len(sentences)} câu")
 
-    sent_path = outdir / f"{args.code}_sentences.txt"
+    sent_path = outdir / f"{args.code}_seg.tsv"
 
     # 4) NER từng câu
     print("[4/4] NER (underthesea + luật)")

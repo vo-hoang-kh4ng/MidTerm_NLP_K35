@@ -1,0 +1,300 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T5]{fontenc}
+\usepackage[vietnamese]{babel}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{graphicx}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{enumitem}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  columns=fullflexible,
+  frame=single,
+  backgroundcolor=\color{gray!5},
+}
+
+\title{\textbf{BÁO CÁO ĐỒ ÁN GIỮA KỲ\\
+Xây dựng ngữ liệu đơn ngữ chữ Quốc ngữ\\
+chuyên ngành lịch sử Việt Nam (Track A -- HVQ)}}
+\author{Mã tác phẩm: \texttt{HVQ\_036}}
+\date{\today}
+
+\begin{document}
+\maketitle
+\tableofcontents
+
+\section{Giới thiệu}
+
+Đồ án thuộc hạng mục \textbf{A. HVQ -- Xây dựng ngữ liệu đơn ngữ chữ Quốc ngữ
+chuyên ngành lịch sử Việt Nam}. Đầu vào là văn bản (text-based PDF, không phải
+ảnh scan), do đó theo yêu cầu đề bài chỉ cần thực hiện hai bước: \emph{tách câu}
+và \emph{gán nhãn thực thể (NER)}; bước hiệu đính chính tả (OCR correction)
+được bổ sung thêm bằng LLM để nâng cao chất lượng ngữ liệu do văn bản gốc có
+nhiều lỗi chính tả/dấu câu từ quá trình số hóa.
+
+Ngữ liệu đầu vào gồm 2 quyển sách lịch sử Việt Nam, được gán chung mã tác phẩm
+\texttt{HVQ\_036} và phân biệt theo mã chương/quyển:
+
+\begin{itemize}
+  \item \textbf{HVQ\_036\_LLKN}: \emph{Lịch Sử Việt Nam Từ Lê Lợi Khởi Nghĩa
+    Đến Nguyễn Suy Vong} -- 165 trang PDF (158 trang nội dung sau khi loại bỏ
+    mục lục/bìa theo bookmark).
+  \item \textbf{HVQ\_036\_TTLS}: \emph{Tiến Trình Lịch Sử Việt Nam} -- 396
+    trang PDF, không có bookmark nên lấy toàn bộ nội dung.
+\end{itemize}
+
+\section{Yêu cầu bài toán}
+
+Theo \texttt{OutputRequirement.pdf} (mục A -- HVQ), với đầu vào dạng text, mỗi
+quyển/tập cần sinh ra:
+
+\begin{itemize}
+  \item \texttt{[matacpham]\_seg.tsv}: nội dung đã tách câu, định dạng
+    \texttt{[sentence\_id]\textbackslash t[sentence]}.
+  \item \texttt{[matacpham]\_ner.json}: kết quả NER, mỗi câu là một object
+    \texttt{\{sentence\_id, sentence, entities\}}, bộ nhãn tối thiểu gồm
+    \texttt{PER, LOC, ORG, TITLE, TME, NUM} (ví dụ trong đề còn dùng thêm nhãn
+    \texttt{DYNASTY}).
+\end{itemize}
+
+Nếu ngữ liệu gồm nhiều quyển/tập, mỗi quyển được lưu trong một thư mục riêng,
+tên file mang tiền tố \texttt{[matacpham\_chapter]}:
+
+\begin{lstlisting}
+HVQ_036/
+ |-- HVQ_036_LLKN/
+ |    |-- HVQ_036_LLKN_seg.tsv
+ |    |-- HVQ_036_LLKN_ner.json
+ |    `-- HVQ_036_LLKN_corrections.jsonl
+ `-- HVQ_036_TTLS/
+      |-- HVQ_036_TTLS_seg.tsv
+      |-- HVQ_036_TTLS_ner.json
+      `-- HVQ_036_TTLS_corrections.jsonl
+\end{lstlisting}
+
+\section{Công cụ sử dụng}
+
+\begin{itemize}
+  \item \textbf{Trích xuất text}: PyMuPDF (\texttt{fitz}) -- đọc bookmark cấp 1
+    của PDF để xác định phạm vi trang nội dung chính (bỏ mục lục, lời nói đầu,
+    bìa), sau đó trích text thô theo từng trang.
+  \item \textbf{Hiệu đính OCR}: Google Gemini (\texttt{gemini-flash-lite-latest},
+    qua SDK \texttt{google-genai}) -- sửa lỗi chính tả/dấu câu và khôi phục dấu
+    câu cuối câu trước khi tách câu.
+  \item \textbf{Tách câu}: \texttt{underthesea} (\texttt{sent\_tokenize}), kết
+    hợp ranh giới khối văn bản (đầu quyển/chương) làm ranh giới câu cứng.
+  \item \textbf{NER}: kết hợp mô hình CRF chung của \texttt{underthesea} (cho
+    nhãn \texttt{PER/LOC/ORG}) với một tầng luật + gazetteer tự xây dựng, chuyên
+    biệt cho văn bản lịch sử Việt Nam (nhãn \texttt{TME}, \texttt{DYNASTY},
+    \texttt{TITLE}, \texttt{NUM}, và bổ sung \texttt{LOC/PER} mà mô hình chung
+    bỏ sót).
+\end{itemize}
+
+\section{Kiến trúc pipeline}
+
+Pipeline gồm 4 giai đoạn chính, cộng một giai đoạn hiệu đính tùy chọn xen giữa
+bước 2 và 3:
+
+\begin{enumerate}
+  \item \textbf{Trích xuất} (\texttt{pipeline/extract.py}) --
+    \texttt{detect\_content\_range()} đọc bookmark cấp 1 để xác định trang bắt
+    đầu/kết thúc nội dung chính; \texttt{extract\_pages()} trích text theo
+    trang (đánh số từ 1).
+  \item \textbf{Chuẩn hóa} (\texttt{pipeline/normalize.py}) --
+    \texttt{normalize\_page\_text()}: chuẩn hóa Unicode (NFC), chuyển dấu thanh
+    kiểu cũ sang kiểu mới (\texttt{hoà}$\to$\texttt{hòa}, \texttt{thuỷ}$\to$
+    \texttt{thủy}, có bảo vệ cho trường hợp \texttt{qu}), sửa lỗi đặt sai dấu
+    do OCR (\texttt{tòan}$\to$\texttt{toàn}), loại bỏ header lặp lại/số
+    trang/URL/tiêu đề in hoa/nhiễu OCR, và nối lại các dòng bị ngắt do xuống
+    dòng hoặc gạch nối. Tiêu đề quyển/phần được loại khỏi nội dung nhưng vẫn
+    giữ vai trò ranh giới khối.
+  \item \textbf{Hiệu đính OCR (tùy chọn, \texttt{--correct})}
+    (\texttt{pipeline/correct.py}) -- chia mỗi trang đã chuẩn hóa thành các
+    đoạn $\le 2500$ ký tự, gửi từng đoạn cho Gemini để sửa lỗi chính tả/dấu
+    câu. Một ngưỡng bảo vệ theo tỉ lệ độ dài (\emph{length-ratio guard}, mặc
+    định 30\%) sẽ từ chối kết quả lệch quá xa so với bản gốc, giữ nguyên đoạn
+    gốc trong trường hợp đó. Kết quả được cache trên đĩa theo khóa
+    \texttt{hash(model, đoạn văn)} để lần chạy sau không gọi lại API cho các
+    đoạn đã xử lý. Nếu gọi API lỗi (hết quota, lỗi mạng...), pipeline lùi về
+    dùng đoạn gốc (\texttt{fallback\_error}) thay vì dừng chương trình. Toàn bộ
+    cặp gốc/đã sửa và hành động tương ứng được ghi vào
+    \texttt{<code>\_corrections.jsonl}.
+  \item \textbf{Tách câu} (\texttt{pipeline/segment.py}) --
+    \texttt{split\_sentences()} dùng \texttt{underthesea.sent\_tokenize} trên
+    từng khối văn bản đã chuẩn hóa, coi ranh giới khối là ranh giới câu cứng,
+    loại bỏ các câu quá ngắn hoặc không chứa chữ cái.
+  \item \textbf{NER} (\texttt{pipeline/ner.py}) --
+    \texttt{extract\_entities()} hợp nhất hai nguồn: mô hình CRF chung của
+    underthesea và tầng luật/gazetteer lịch sử. Các span chồng lấn được xử lý
+    theo nguyên tắc span dài hơn thắng, sau đó theo thứ tự ưu tiên cố định:
+    \texttt{TME > DYNASTY > TITLE > model > rule-LOC > rule-PER > NUM}.
+\end{enumerate}
+
+\section{Kết quả}
+
+\subsection{Số liệu tổng quan}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrrrr}
+\toprule
+Quyển & Số trang & Số câu & Số thực thể & Số đoạn hiệu đính \\
+\midrule
+HVQ\_036\_LLKN & 158 & 1{,}498 & 4{,}472 & 153 \\
+HVQ\_036\_TTLS & 396 & 7{,}276 & 16{,}802 & 394 \\
+\midrule
+\textbf{Tổng} & 554 & 8{,}774 & 21{,}274 & 547 \\
+\bottomrule
+\end{tabular}
+\caption{Số liệu tổng quan hai quyển sau khi xử lý toàn bộ pipeline.}
+\end{table}
+
+\subsection{Phân bố nhãn thực thể}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrr}
+\toprule
+Nhãn & HVQ\_036\_LLKN & HVQ\_036\_TTLS \\
+\midrule
+LOC     & 1{,}883 & 8{,}868 \\
+NUM     & 397     & 2{,}946 \\
+PER     & 1{,}421 & 2{,}659 \\
+TME     & 278     & 1{,}149 \\
+TITLE   & 294     & 438 \\
+DYNASTY & 171     & 415 \\
+ORG     & 28      & 327 \\
+\bottomrule
+\end{tabular}
+\caption{Phân bố nhãn thực thể theo từng quyển.}
+\end{table}
+
+\subsection{Cải tiến chất lượng NER}
+
+Rà soát ngẫu nhiên các câu có nhãn LOC phát hiện ba lỗi hệ thống, đều đã được
+sửa trong \texttt{pipeline/ner.py}:
+
+\begin{itemize}
+  \item \textbf{Chính tả gạch nối kiểu cũ không được nhận diện}: quyển LLKN
+    dùng chính tả cũ nối các âm tiết bằng gạch nối (\texttt{Nguyễn-vương},
+    \texttt{Gia-định}, \texttt{tri-phủ}), trong khi biểu thức chính quy nhận
+    diện "từ viết hoa" chỉ chấp nhận một âm tiết liền, khiến các luật
+    TME/DYNASTY/TITLE/LOC/PER dựa trên mẫu này bỏ sót toàn bộ tên riêng dạng
+    này. Đã mở rộng để chấp nhận âm tiết nối gạch ngang.
+  \item \textbf{Mô hình chung gán nhầm người có chức danh thành LOC/ORG}:
+    xác nhận trực tiếp qua đầu ra của \texttt{underthesea.ner} (ví dụ
+    \texttt{"Pagiơ"} sau \texttt{"Đô đốc"} bị gán \texttt{B-LOC}). Đã thêm một
+    bước hậu xử lý: nếu một span LOC/ORG (hoặc phần văn bản ngay trước nó) bắt
+    đầu/kết thúc bằng một chức danh đã biết trong từ điển, phần tên còn lại
+    được gán lại nhãn PER.
+  \item \textbf{Span vắt qua dấu câu giữa câu}: một số span của mô hình lấn
+    qua dấu phẩy (ví dụ \texttt{"Tổng thống, Giôn-xơn"} bị gộp làm một span).
+    Đã thêm bước cắt span tại dấu phẩy/chấm phẩy nằm giữa, chỉ giữ lại phần
+    sau cùng.
+\end{itemize}
+
+Kết quả: số thực thể LOC giảm (LLKN: 2.049$\to$1.883; TTLS: 9.134$\to$8.868),
+số thực thể PER tăng tương ứng (LLKN: 1.229$\to$1.421; TTLS:
+2.361$\to$2.659), phản ánh đúng hướng sửa lỗi phân loại nhầm LOC/PER thay vì
+chỉ thay đổi số lượng ngẫu nhiên. Các trường hợp mô hình chung gán nhầm nhãn
+mà không có chức danh liền kề (ví dụ tên riêng đứng độc lập không theo sau
+một chức danh trong từ điển) vẫn còn tồn tại và nằm ngoài phạm vi đợt sửa này
+(xem mục Hạn chế).
+
+\subsection{Kết quả hiệu đính OCR bằng Gemini}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrrrr}
+\toprule
+Quyển & Tổng đoạn & Đã sửa/cache & Còn lỗi (giữ nguyên) & Tỉ lệ hoàn thành \\
+\midrule
+HVQ\_036\_TTLS & 394 & 394 & 0 & 100.0\% \\
+HVQ\_036\_LLKN & 153 & 153 & 0 & 100.0\% \\
+\bottomrule
+\end{tabular}
+\caption{Tiến độ hiệu đính OCR theo từng quyển.}
+\end{table}
+
+Cả hai quyển đều đã được hiệu đính hoàn toàn (394/394 và 153/153 đoạn, 0 lỗi
+API còn sót), đạt được qua nhiều lượt chạy lại tận dụng cơ chế cache (mỗi lượt
+chỉ gọi lại API cho các đoạn từng thất bại ở lượt trước). Trong quá trình xử
+lý, tầng miễn phí của Gemini API nhiều lần bị vượt ngưỡng quota
+(\texttt{429 RESOURCE\_EXHAUSTED}), khiến một số đoạn phải giữ nguyên văn bản
+gốc tạm thời (\emph{fallback\_error}) ở các lượt chạy trung gian; những đoạn
+này sau đó được xử lý lại thành công ở các lượt tiếp theo (bao gồm cả việc đổi
+sang API key khác khi cần) cho đến khi đạt 100\% cho cả hai quyển.
+
+\subsection{Ví dụ một bản ghi NER}
+
+\begin{verbatim}
+{
+  "sentence_id": "HVQ_036_TTLS_000001",
+  "sentence": "Ngày 23, làm lễ mở đọc chiếu thư của nhà Minh ở điện Kính Thiên.",
+  "entities": [
+    { "text": "Ngày 23", "label": "TME" },
+    { "text": "nhà Minh", "label": "DYNASTY" },
+    { "text": "điện Kính Thiên", "label": "LOC" }
+  ]
+}
+\end{verbatim}
+
+\section{Cấu trúc thư mục output}
+
+\begin{lstlisting}
+output/
+`-- HVQ_036/
+     |-- HVQ_036_LLKN/
+     |    |-- HVQ_036_LLKN_seg.tsv
+     |    |-- HVQ_036_LLKN_ner.json
+     |    |-- HVQ_036_LLKN_corrections.jsonl
+     |    `-- cache/gemini.json
+     `-- HVQ_036_TTLS/
+          |-- HVQ_036_TTLS_seg.tsv
+          |-- HVQ_036_TTLS_ner.json
+          |-- HVQ_036_TTLS_corrections.jsonl
+          `-- cache/gemini.json
+\end{lstlisting}
+
+\texttt{[matacpham]\_corrections.jsonl} không nằm trong đặc tả bắt buộc của đề
+bài nhưng được giữ lại như một tài liệu phụ, ghi lại minh bạch từng đoạn văn
+bản gốc/đã sửa và hành động tương ứng (\texttt{corrected}, \texttt{cache\_hit},
+\texttt{fallback\_error}), phục vụ việc kiểm tra chất lượng hiệu đính.
+
+\section{Hạn chế và hướng phát triển}
+
+\begin{itemize}
+  \item \textbf{Quota API miễn phí}: là nút thắt chính trong quá trình hiệu
+    đính, đòi hỏi nhiều lượt chạy lại (tận dụng cache) và đổi API key khi cần
+    để đạt 100\% cho cả hai quyển. Với tập dữ liệu lớn hơn, nên cân nhắc dùng
+    gói trả phí để rút ngắn thời gian xử lý.
+  \item \textbf{NER dựa một phần trên luật/gazetteer}: được tinh chỉnh riêng
+    cho văn bản lịch sử Việt Nam trong tập dữ liệu này, có thể cần bổ sung
+    thêm gazetteer khi áp dụng cho quyển sách khác ngoài phạm vi đồ án.
+  \item \textbf{Mô hình CRF chung đôi khi gán nhầm nhãn không kèm chức danh}:
+    ví dụ tên riêng đứng một mình (không theo sau chức danh trong từ điển)
+    vẫn có thể bị gán nhầm LOC/ORG, hoặc mô hình tạo ra span dài bất thường
+    gộp cả cụm danh từ lẫn động từ. Hướng khắc phục: dùng thông tin từ loại
+    (POS) do underthesea cung cấp để kiểm tra tính hợp lệ khi mở rộng span
+    theo nhãn BIO, hoặc thay bằng một mô hình NER được huấn luyện riêng cho
+    văn bản lịch sử (ngoài phạm vi đợt cải tiến này).
+  \item \textbf{Tách câu}: phụ thuộc vào chất lượng chuẩn hóa văn bản ở bước
+    trước; các câu bị OCR làm hỏng nặng dấu câu có thể vẫn bị tách sai dù đã
+    qua hiệu đính LLM.
+\end{itemize}
+
+\section{Kết luận}
+
+Pipeline đã đáp ứng đầy đủ định dạng output theo yêu cầu đề bài (\texttt{seg.tsv},
+\texttt{ner.json} với bộ nhãn tối thiểu PER/LOC/ORG/TITLE/TME/NUM và nhãn mở
+rộng DYNASTY) cho cả hai quyển thuộc mã tác phẩm \texttt{HVQ\_036}, tổ chức
+theo đúng cấu trúc thư mục nhiều quyển của đề bài. Cả hai quyển LLKN và TTLS
+đều đã hoàn thành 100\% hiệu đính OCR bằng Gemini.
+
+\end{document}
