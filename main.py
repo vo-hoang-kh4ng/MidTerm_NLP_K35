@@ -43,7 +43,7 @@ def parse_args():
     p.add_argument("--limit", type=int, default=0, help="Chỉ xử lý N câu đầu (0 = tất cả, dùng để thử nhanh)")
     p.add_argument("--correct", action="store_true",
                    help="Bật hiệu đính OCR bằng Gemini trước khi tách câu")
-    p.add_argument("--model", default="gemini-flash-latest",
+    p.add_argument("--model", default="gemini-flash-lite-latest",
                    help="Model Gemini dùng khi --correct")
     p.add_argument("--no-cache", action="store_true",
                    help="Không dùng cache hiệu đính (luôn gọi API)")

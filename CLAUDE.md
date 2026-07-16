@@ -26,7 +26,7 @@ Bật hiệu đính OCR bằng Gemini (cần `GEMINI_API_KEY`), chạy trước 
 
 ```bash
 export GEMINI_API_KEY=...
-python3 main.py --pdf <file.pdf> --code <MÃ>_corr --correct [--model gemini-flash-latest] [--no-cache]
+python3 main.py --pdf <file.pdf> --code <MÃ>_corr --correct [--model gemini-flash-lite-latest] [--no-cache]
 ```
 
 Thêm output khi bật `--correct`: `<MÃ>_corr_corrections.jsonl` (cặp đoạn gốc→đã sửa)
