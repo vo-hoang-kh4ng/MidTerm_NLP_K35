@@ -45,7 +45,7 @@ pip install -r requirements.txt
 ```
 
 Outputs land in `output/`:
-- `<code>_sentences.txt` — one line per sentence: `sentence_id<TAB>sentence`
+- `<code>_seg.tsv` — one line per sentence: `sentence_id<TAB>sentence`
 - `<code>_ner.json` — list of `{sentence_id, sentence, entities: [{text, label}]}`
 
 Test suite: `python3 -m pytest tests/` (covers `pipeline/correct.py`; 19 tests, no
