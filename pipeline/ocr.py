@@ -17,7 +17,7 @@ def _load_paddleocr(lang):
         from paddleocr import PaddleOCR
     except ImportError:
         raise SystemExit(
-            "Thiếu PaddleOCR. Cài: pip install paddlepaddle paddleocr"
+            "Thiếu PaddleOCR. Cài: pip install -r requirements-ocr.txt"
         )
     return PaddleOCR(lang=lang)
 

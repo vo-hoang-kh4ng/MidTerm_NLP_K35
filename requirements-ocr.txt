@@ -1,0 +1,6 @@
+# Gói bổ sung cho OCR ảnh quét (cờ --ocr, pipeline/ocr.py).
+# Cài: pip install -r requirements-ocr.txt
+paddlepaddle>=2.6.0
+paddleocr>=2.8.1
+numpy>=1.26.4
+Pillow>=10.4.0
