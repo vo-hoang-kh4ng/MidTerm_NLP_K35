@@ -5,9 +5,9 @@ Chạy:
     python main.py                       # quét input/<MÃ>/*.pdf, mã = tên folder
     python main.py --pdf <file.pdf> --code HVQ_036   # chạy một file lẻ
 
-Kết quả trong thư mục output/:
-    <MA>_seg.tsv  : mỗi dòng "sentence_id<TAB>câu"
-    <MA>_ner.json      : [{"sentence_id", "sentence", "entities": [...]}, ...]
+Kết quả trong thư mục output/<MÃ>/ (nhiều tập thì thêm cấp <MÃ>_NN/):
+    <MÃ>_seg.tsv  : mỗi dòng "sentence_id<TAB>câu"
+    <MÃ>_ner.json : [{"sentence_id", "sentence", "entities": [...]}, ...]
 """
 
 import argparse
@@ -137,13 +137,15 @@ def chapter_numbers(pdf_paths):
 def process_work(pdf_paths, code, args, outdir, corr_client, corr_cache, cache_path):
     """Chạy pipeline 4 bước cho một tác phẩm.
 
-    Một PDF: ghi thẳng <outdir>/<MÃ>_seg.tsv, <MÃ>_ner.json.
+    Một PDF: ghi vào <outdir>/<MÃ>/<MÃ>_seg.tsv, <MÃ>_ner.json.
     Nhiều PDF (nhiều quyển/tập): mỗi tập một thư mục riêng
     <outdir>/<MÃ>/<MÃ>_NN/<MÃ>_NN_seg.tsv..., NN lấy theo số ở cuối tên file.
     """
     if len(pdf_paths) == 1:
+        work_dir = outdir / code
+        work_dir.mkdir(parents=True, exist_ok=True)
         pages = extract_one_pdf(pdf_paths[0], args)
-        run_pipeline(pages, code, outdir, args, corr_client, corr_cache, cache_path)
+        run_pipeline(pages, code, work_dir, args, corr_client, corr_cache, cache_path)
         return
 
     nums = chapter_numbers(pdf_paths)
