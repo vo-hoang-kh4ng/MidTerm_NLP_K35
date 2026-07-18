@@ -63,13 +63,43 @@ def save_cache(path, cache):
         json.dump(cache, f, ensure_ascii=False, indent=2)
 
 
+# Bảng tên riêng/thuật ngữ viết đúng, dùng làm tài liệu đối chiếu trong prompt
+# Gemini chỉ dùng khi gặp chuỗi OCR méo giống mục nào đó; tên không xuất hiện
+# trong đoạn văn thì không ảnh hưởng.
+GLOSSARY = [
+    # Truyền thuyết / thời dựng nước
+    "Hùng Vương", "Văn Lang", "Âu Lạc", "Lạc Việt", "Lạc hầu", "Lạc tướng",
+    "Kinh Dương Vương", "Lạc Long Quân", "Âu Cơ", "An Dương Vương",
+    "Sơn Tinh", "Thủy Tinh", "Thánh Gióng", "Chử Đồng Tử", "Tản Viên",
+    # Khảo cổ học
+    "Đông Sơn", "Phùng Nguyên", "Gò Mun", "Đồng Đậu", "trống đồng",
+    "Núi Đọ", "Đa Bút", "Thiệu Dương", "Đông Khối", "Việt Khê", "Lũng Hòa",
+    "Viện Khảo cổ học", "Viện Sử học", "Viện Bảo tàng Lịch sử",
+    "Ủy ban Khoa học Xã hội Việt Nam",
+    # Sử trung-cận đại
+    "Đại Việt", "Đại Cồ Việt", "Đại Nam", "Chiêm Thành", "Chân Lạp",
+    "Thăng Long", "Phú Xuân", "Gia Định", "Đàng Trong", "Đàng Ngoài",
+    "Lê Lợi", "Lam Sơn", "Nguyễn Trãi", "Lê Thánh Tông", "Quang Trung",
+    "Tây Sơn", "Gia Long", "Minh Mạng", "Tự Đức",
+    # Thư tịch cổ
+    "Lĩnh Nam chích quái", "Việt điện u linh", "Đại Việt sử ký toàn thư",
+    "Việt sử thông giám cương mục", "Lịch triều hiến chương loại chí",
+    "Dư địa chí", "Phủ biên tạp lục",
+]
+
 CORRECTION_PROMPT = (
     "Bạn là công cụ hiệu đính lỗi OCR cho văn bản lịch sử tiếng Việt. "
-    "Hãy sửa: lỗi chính tả, sai dấu thanh, từ bị dính hoặc tách sai, và "
-    "khôi phục dấu chấm ở cuối câu. TUYỆT ĐỐI KHÔNG dịch, KHÔNG tóm tắt, "
-    "KHÔNG thêm/bớt hay diễn giải nội dung, KHÔNG đổi văn phong. Giữ nguyên "
-    "tên riêng, số, năm và niên hiệu, trừ khi chúng rõ ràng là ký tự OCR bị méo. "
+    "Hãy sửa: lỗi chính tả, sai dấu thanh, từ bị dính hoặc tách sai, ký tự "
+    "ngoại lai lẫn vào (chữ Hán/Nhật, Kirin, ký hiệu rác), và khôi phục dấu "
+    "chấm ở cuối câu. TUYỆT ĐỐI KHÔNG dịch, KHÔNG tóm tắt, KHÔNG thêm/bớt "
+    "hay diễn giải nội dung, KHÔNG đổi văn phong. Giữ nguyên tên riêng, số, "
+    "năm và niên hiệu, trừ khi chúng rõ ràng là ký tự OCR bị méo. GIỮ NGUYÊN "
+    "chính tả cũ có gạch nối của sách in xưa (Lam-Sơn, Nghệ-An, Thái-Tổ...), "
+    "phiên âm gạch nối (Béc-lin, Lê-nin-grát) và mã hiệu (C14, M12) — không "
+    "hiện đại hóa chúng. "
     "Chỉ trả về đúng văn bản đã sửa, không kèm lời dẫn hay giải thích.\n\n"
+    "Tên riêng/thuật ngữ viết đúng để đối chiếu khi khôi phục chữ OCR méo: "
+    + "; ".join(GLOSSARY) + ".\n\n"
     "Văn bản cần sửa:\n"
 )
 
