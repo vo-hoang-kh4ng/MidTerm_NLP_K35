@@ -20,12 +20,21 @@ from underthesea import ner as uts_ner
 _UP = "A-ZĐÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴ"
 _LO = "a-zđàáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵ"
 
-_CAPWORD = rf"[{_UP}][{_LO}]+"
+# Một "từ viết hoa": chấp nhận gạch nối kiểu chính tả cũ (Lam-Sơn, Thái-Tổ,
+# Xích-quỷ) — phần sau gạch nối có thể viết hoa hoặc thường.
+_CAPWORD = rf"[{_UP}][{_LO}]+(?:-[{_UP}{_LO}][{_LO}]*)*"
 _CAPSEQ = rf"{_CAPWORD}(?:\s+{_CAPWORD})*"
 
 _CAN = "Giáp|Ất|Bính|Đinh|Mậu|Kỷ|Canh|Tân|Nhâm|Quý"
 _CHI = "Tý|Sửu|Dần|Mão|Mẹo|Thìn|Tỵ|Ngọ|Mùi|Thân|Dậu|Tuất|Hợi"
 _CANCHI = rf"(?:{_CAN})\s+(?:{_CHI})"
+
+# Hậu tố kỷ nguyên: "trước Công nguyên", "TCN", "tr. Th. Ch. G.S.",
+# "trước Thiên Chúa giáng sinh" (sách in cũ)
+_ERA = (
+    r"(?:tr(?:ước)?|sau)\s+(?:Công\s+[Nn]guyên|Thiên\s+Chúa(?:\s+giáng\s+sinh)?)|"
+    r"tr\.?\s?Th\.?\s?Ch\.?(?:\s?G\.?\s?S\.?)?|TCN|SCN|tr\.?\s?CN"
+)
 
 # ---------------------------------------------------------------------------
 # Luật thời gian (TME)
@@ -34,12 +43,21 @@ _TME_PATTERNS = [
     rf"[Nn]gày\s+(?:mồng\s+|mùng\s+)?(?:\d{{1,2}}|{_CANCHI})\b",
     rf"[Tt]háng\s+(?:\d{{1,2}}|[Gg]iêng|[Cc]hạp)(?:\s+nhuận)?\b",
     rf"[Nn]ăm\s+{_CAPSEQ}\s+thứ\s+\d+\b",          # năm Hồng Đức thứ 2
+    # "năm 333 tr. Th. Ch. G.S.", "năm 40 trước Công nguyên", "179 TCN"
+    rf"[Nn]ăm\s+\d{{1,4}}\s*(?:{_ERA})\b",
+    r"\b\d{1,4}\s*(?:TCN|tr\.?\s?CN)\b",
     rf"[Nn]ăm\s+(?:\d{{3,4}}|{_CANCHI})\b",
     rf"[Nn]iên\s?hiệu\s+{_CAPSEQ}(?:\s+thứ\s+\d+)?\b",
     rf"[Đđ]ời\s+(?:vua\s+|chúa\s+)?{_CAPSEQ}\b",
     r"[Mm]ùa\s+(?:xuân|hạ|thu|đông)\b",
-    r"[Tt]hế\s?kỷ\s+(?:thứ\s+)?[IVX\d]+\b",
+    rf"[Tt]hế\s?kỷ\s+(?:thứ\s+)?[IVX\d]+(?:\s*(?:{_ERA}))?\b",
     r"[Gg]iờ\s+(?:" + _CHI + r")\b",
+    # "thời kỳ Hùng Vương", "sơ kỳ thời đại đá mới", "hậu kỳ thời đại đồng thau"
+    rf"(?:[Ss]ơ\s+kỳ\s+|[Tt]rung\s+kỳ\s+|[Hh]ậu\s+kỳ\s+)?"
+    rf"[Tt]hời\s+(?:kỳ|đại)\s+(?:{_CAPSEQ}|đá(?:\s+(?:cũ|giữa|mới))?|"
+    rf"đồng\s+thau|đồ\s+(?:đồng|sắt|đá))\b",
+    # Ngày tháng dạng số: 12/3/1970, ngày 2-9-1945
+    r"(?:[Nn]gày\s+)?\d{1,2}\s*[/-]\s*\d{1,2}\s*[/-]\s*\d{2,4}\b",
 ]
 _TME_RE = [re.compile(p) for p in _TME_PATTERNS]
 
@@ -66,6 +84,9 @@ _TITLES = [
     "lãnh binh", "cai đội", "chánh sứ", "phó sứ", "tham tri", "tham tụng",
     "bồi tụng", "hành khiển", "thứ sử", "thái thú", "thái giám", "quan lang",
     "vua", "chúa",
+    # Chức danh hiện đại (sách thế kỷ 20, vd kỷ yếu Hùng Vương Dựng Nước)
+    "phó giáo sư", "giáo sư", "viện trưởng", "hiệu trưởng", "chủ tịch",
+    "phó chủ tịch", "bộ trưởng", "thứ trưởng", "giám đốc",
 ]
 _TITLES.sort(key=len, reverse=True)
 _TITLE_RE = re.compile(
@@ -77,9 +98,10 @@ _TITLE_RE = re.compile(
 # Địa danh theo từ chỉ loại + tên riêng (bổ trợ LOC)
 # ---------------------------------------------------------------------------
 _LOC_CUES = (
-    "điện|thành|phủ|huyện|xã|thôn|làng|trấn|đạo|lộ|châu|phường|tổng|hạt|"
-    "sông|núi|hồ|đầm|cửa biển|cửa|đèo|đảo|chùa|đền|miếu|quán|cầu|chợ|bến|"
-    "kinh đô|kinh thành|nước|xứ|động|nguồn|ải|cung|lầu|gác|hành cung"
+    "điện|thành phố|thành|phủ|tỉnh|quận|huyện|xã|thôn|làng|trấn|đạo|lộ|châu|"
+    "phường|tổng|hạt|sông|núi|hồ|đầm|cửa biển|cửa|đèo|đảo|chùa|đền|miếu|quán|"
+    "cầu|chợ|bến|kinh đô|kinh thành|nước|xứ|động|nguồn|ải|cung|lầu|gác|"
+    "hành cung|miền|vùng|di chỉ|địa điểm|gò|đồi|hang|mái đá"
 )
 _LOC_RE = re.compile(rf"\b(?:{_LOC_CUES})\s+{_CAPSEQ}")
 
@@ -87,8 +109,63 @@ _LOC_RE = re.compile(rf"\b(?:{_LOC_CUES})\s+{_CAPSEQ}")
 # Nhân danh sau chức danh (bổ trợ PER): "vua Lê Thánh Tông", "tướng Trần..."
 # ---------------------------------------------------------------------------
 _PER_RE = re.compile(
-    rf"\b(?:vua|chúa|ông|bà|họ|tướng|quan|công chúa|hoàng hậu|thái tử)\s+({_CAPSEQ})"
+    rf"\b(?:vua|chúa|ông|bà|họ|tướng|quan|công chúa|hoàng hậu|thái tử|"
+    rf"giáo sư|đồng chí)\s+({_CAPSEQ})"
 )
+
+# ---------------------------------------------------------------------------
+# Tên riêng đứng trần model hay bỏ sót.
+# Match nguyên cụm, phân biệt hoa thường.
+# ---------------------------------------------------------------------------
+_GAZ_PER = [
+    "Kinh Dương Vương", "Lạc Long Quân", "Âu Cơ", "An Dương Vương",
+    "Sơn Tinh", "Thủy Tinh", "Thánh Gióng", "Chử Đồng Tử", "Tiên Dung",
+    "An Tiêm", "Lang Liêu", "Tản Viên", "Hùng Vương",
+    "Ngô Sĩ Liên", "Lê Quý Đôn", "Phan Huy Chú",
+    # Sử Lê -> Nguyễn (HVQ_037/038)
+    "Lê Lợi", "Nguyễn Trãi", "Nguyễn Huệ", "Quang Trung",
+    "Lê Thái Tổ", "Lê Thái Tông", "Lê Nhân Tông", "Lê Thánh Tông",
+    "Lê Hiến Tông", "Lê Chiêu Thống", "Gia Long", "Minh Mạng", "Tự Đức",
+]
+_GAZ_LOC = [
+    "Văn Lang", "Âu Lạc", "Phong Châu", "Cổ Loa", "Bạch Hạc", "Việt Trì",
+    "Phú Thọ", "Vĩnh Phú", "Lâm Thao", "Núi Đọ", "Đa Bút", "Thiệu Dương",
+    "Đông Khối", "Việt Khê", "Lũng Hòa", "Gò Bông", "Phùng Nguyên",
+    "Đồng Đậu", "Gò Mun", "Đông Sơn",
+    # Quốc hiệu / địa danh sử trung-cận đại (HVQ_037/038)
+    "Xích Quỷ", "Đại Cồ Việt", "Đại Việt", "Đại Nam", "Chiêm Thành",
+    "Chân Lạp", "Thăng Long", "Lam Sơn", "Phú Xuân", "Gia Định",
+    "Đàng Trong", "Đàng Ngoài",
+]
+_GAZ_ORG = [
+    "Ủy ban Khoa học Xã hội Việt Nam", "Viện Khảo cổ học", "Viện Sử học",
+    "Viện Bảo tàng Lịch sử", "Viện Dân tộc học", "Viện Văn học",
+    "Viện Kinh tế học", "Viện Mỹ thuật Mỹ nghệ", "Viện Vật lý Hà Nội",
+    "Bảo tàng Lịch sử", "Trường Đại học Tổng hợp", "Vụ Bảo tồn Bảo tàng",
+    "Ban Tuyên giáo Tỉnh ủy Vĩnh Phú", "Đoàn Địa chất 58",
+]
+
+
+def _gaz_regex(names):
+    names = sorted(names, key=len, reverse=True)  # cụm dài match trước
+    # Khoảng trắng trong tên chấp nhận cả gạch nối chính tả cũ (Văn-Lang,
+    # Chiêm-Thành); từ sau gạch nối/khoảng trắng có thể viết thường (Xích-quỷ).
+    parts = []
+    for n in names:
+        words = n.split()
+        pat = re.escape(words[0])
+        for w in words[1:]:
+            head = f"[{w[0].upper()}{w[0].lower()}]" if w[0].isalpha() else re.escape(w[0])
+            pat += r"[\s\-]" + head + re.escape(w[1:])
+        parts.append(pat)
+    return re.compile(r"(?<!\w)(?:" + "|".join(parts) + r")(?!\w)")
+
+
+_GAZ_RES = [
+    (_gaz_regex(_GAZ_ORG), "ORG_GAZ"),
+    (_gaz_regex(_GAZ_PER), "PER_GAZ"),
+    (_gaz_regex(_GAZ_LOC), "LOC_GAZ"),
+]
 
 # ---------------------------------------------------------------------------
 # Số lượng (NUM)
@@ -96,9 +173,12 @@ _PER_RE = re.compile(
 _NUM_UNITS = "vạn|ức|nghìn|ngàn|trăm|dặm|trượng|thước|tấc|mẫu|sào|quan|hộc|thạch|cân|lạng|người|năm|tháng|ngày|đời|chiếc|con|quyển|đạo|viên"
 _NUM_RE = re.compile(rf"\b\d+(?:[.,]\d+)*(?:\s+(?:{_NUM_UNITS})\b)?")
 
-# Độ ưu tiên khi span bằng độ dài (số nhỏ = ưu tiên cao)
-_PRIORITY = {"TME": 0, "DYNASTY": 1, "TITLE": 2, "PER": 3, "LOC": 3, "ORG": 3,
-             "LOC_RULE": 4, "PER_RULE": 5, "NUM": 6}
+# Độ ưu tiên khi span bằng độ dài (số nhỏ = ưu tiên cao).
+# Gazetteer đứng trên model: tên đã biết chắc nhãn thì không để model đổi nhãn.
+_PRIORITY = {"TME": 0, "DYNASTY": 1, "TITLE": 2,
+             "ORG_GAZ": 3, "PER_GAZ": 3, "LOC_GAZ": 3,
+             "PER": 4, "LOC": 4, "ORG": 4,
+             "LOC_RULE": 5, "PER_RULE": 6, "NUM": 7}
 
 
 def _model_entities(sentence):
@@ -148,6 +228,9 @@ def _rule_entities(sentence):
         spans.append((m.start(), m.end(), "LOC_RULE"))
     for m in _PER_RE.finditer(sentence):
         spans.append((m.start(1), m.end(1), "PER_RULE"))
+    for rx, label in _GAZ_RES:
+        for m in rx.finditer(sentence):
+            spans.append((m.start(), m.end(), label))
     for m in _NUM_RE.finditer(sentence):
         spans.append((m.start(), m.end(), "NUM"))
     return spans
@@ -168,7 +251,8 @@ def extract_entities(sentence):
     chosen.sort()
     result = []
     for start, end, label in chosen:
-        label = {"LOC_RULE": "LOC", "PER_RULE": "PER"}.get(label, label)
+        label = {"LOC_RULE": "LOC", "PER_RULE": "PER",
+                 "ORG_GAZ": "ORG", "PER_GAZ": "PER", "LOC_GAZ": "LOC"}.get(label, label)
         # Cắt dấu câu/khoảng trắng dính ở hai mép span
         text = sentence[start:end].strip(" ,.;:!?()[]\"'-")
         if not text:
