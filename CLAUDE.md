@@ -9,28 +9,37 @@ A Vietnamese NLP pipeline that turns an OCR'd historical PDF (the book *Lịch t
 ## Commands
 
 ```bash
-# Full run (defaults to the bundled book, code HVQ_036, auto page detection)
-python main.py --pdf <file.pdf>
+# Full run: scans input/<CODE>/*.pdf, work code = folder name (e.g. input/HVQ_036)
+python main.py
 
 # Quick smoke test on the first N sentences
-python main.py --pdf <file.pdf> --limit 200
+python main.py --limit 200
+
+# Single-file mode (bypasses input/ scanning)
+python main.py --pdf <file.pdf> --code HVQ_036
 
 # Force a page range instead of bookmark auto-detection
-python main.py --pdf <file.pdf> --start-page 30 --end-page 500
+python main.py --start-page 30 --end-page 500
 
-# Custom work code + output dir (affects sentence_id prefix and filenames)
-python main.py --pdf <file.pdf> --code HVQ_036 --outdir output
+# Scanned-image PDF without a text layer: render pages + PaddleOCR
+python main.py --ocr [--ocr-dpi 200]   # needs: pip install -r requirements-ocr.txt
 ```
+
+Input layout: one folder per work, `input/<CODE>/<file>.pdf`. Folders with no PDF
+are skipped. A folder with several PDFs is a multi-volume work: each volume gets
+its own output subfolder `output/<CODE>/<CODE>_NN/` (NN = last number in the PDF
+filename); a single-PDF work writes `output/<CODE>/<CODE>_seg.tsv` etc. directly.
 
 Bật hiệu đính OCR bằng Gemini (cần `GEMINI_API_KEY`), chạy trước bước tách câu:
 
 ```bash
 export GEMINI_API_KEY=...
-python3 main.py --pdf <file.pdf> --code <MÃ>_corr --correct [--model gemini-flash-lite-latest] [--no-cache]
+python3 main.py --correct [--model gemini-flash-lite-latest] [--no-cache]
 ```
 
-Thêm output khi bật `--correct`: `<MÃ>_corr_corrections.jsonl` (cặp đoạn gốc→đã sửa)
-và cache `output/cache/gemini.json` (tái lập, tránh gọi lại API).
+Thêm output khi bật `--correct`: `<MÃ>_corrections.jsonl` (cặp đoạn gốc→đã sửa,
+nằm cùng thư mục `output/<MÃ>/`) và cache `output/cache/gemini.json` (tái lập,
+tránh gọi lại API).
 
 **Lưu ý chi phí:** `--limit` chỉ cắt bớt *câu* sau khi đã tách, không giới hạn số
 trang gửi lên Gemini — một lần chạy `--correct --limit 40` vẫn gọi API cho
@@ -44,9 +53,12 @@ Dev/test deps: `pip install -r requirements-dev.txt` (`pytest`).
 pip install -r requirements.txt
 ```
 
-Outputs land in `output/`:
+Outputs land in `output/<code>/`:
 - `<code>_seg.tsv` — one line per sentence: `sentence_id<TAB>sentence`
 - `<code>_ner.json` — list of `{sentence_id, sentence, entities: [{text, label}]}`
+
+OCR extras live in `requirements-ocr.txt` (`paddlepaddle`, `paddleocr`, `numpy`,
+`Pillow`) — only needed for `--ocr`; `pipeline/ocr.py` imports them lazily.
 
 Test suite: `python3 -m pytest tests/` (covers `pipeline/correct.py`; 19 tests, no
 real API calls — uses injected fake clients). No linter or build step. PDFs are
