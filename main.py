@@ -24,7 +24,12 @@ from pipeline.segment import split_sentences
 from pipeline.ner import extract_entities
 from pipeline.correct import (
     correct_text, GeminiClient, load_cache, save_cache, write_corrections,
+    DEFAULT_RPM,
 )
+
+# Ghi cache sau mỗi ngần này đoạn đã hiệu đính: ngắt giữa chừng (Ctrl-C, mất
+# mạng, hết quota) chỉ mất tối đa ngần ấy đoạn thay vì cả lượt chạy.
+CHECKPOINT_EVERY = 25
 
 # Console Windows cần UTF-8 để in tiếng Việt
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -52,6 +57,9 @@ def parse_args():
                    help="Model Gemini dùng khi --correct")
     p.add_argument("--no-cache", action="store_true",
                    help="Không dùng cache hiệu đính (luôn gọi API)")
+    p.add_argument("--rpm", type=int, default=DEFAULT_RPM,
+                   help=f"Giới hạn số lần gọi Gemini mỗi phút khi --correct "
+                        f"(mặc định {DEFAULT_RPM}; 0 = không điều tiết)")
     p.add_argument("--ocr", action="store_true",
                    help="PDF là ảnh quét không có text layer: render trang + PaddleOCR "
                         "thay vì trích text bằng PyMuPDF (cần cài paddleocr)")
@@ -166,13 +174,24 @@ def run_pipeline(pages, code, outdir, args, corr_client, corr_cache, cache_path)
     print("[2/4] Chuẩn hóa text tiếng Việt")
     print("[3/4] Tách câu (underthesea)")
     sentences = []
-    for page_no, raw in pages:
+    since_checkpoint = 0
+    t_corr = time.time()
+    for page_idx, (page_no, raw) in enumerate(pages, start=1):
         clean = normalize_page_text(raw)
         if not clean:
             continue
         if args.correct:
             clean, recs = correct_text(clean, corr_client, args.model, corr_cache)
             corr_records.extend(recs)
+            since_checkpoint += len(recs)
+            if since_checkpoint >= CHECKPOINT_EVERY:
+                if not args.no_cache:
+                    save_cache(cache_path, corr_cache)
+                since_checkpoint = 0
+                done = len(corr_records)
+                rate = done / max(time.time() - t_corr, 1e-9) * 60
+                print(f"      hiệu đính: trang {page_idx}/{len(pages)}, "
+                      f"{done} đoạn ({rate:.1f} đoạn/phút)")
         sentences.extend(split_sentences(clean))
     if args.correct:
         if not args.no_cache:
@@ -224,9 +243,10 @@ def main():
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
             sys.exit("Thiếu GEMINI_API_KEY. Đặt: export GEMINI_API_KEY=...")
-        corr_client = GeminiClient(api_key)
+        corr_client = GeminiClient(api_key, rpm=args.rpm)
         corr_cache = {} if args.no_cache else load_cache(cache_path)
-        print(f"[+] Hiệu đính OCR bằng Gemini ({args.model})")
+        throttle_note = f"tối đa {args.rpm} lần gọi/phút" if args.rpm else "không điều tiết"
+        print(f"[+] Hiệu đính OCR bằng Gemini ({args.model}, {throttle_note})")
 
     jobs = collect_jobs(args)
     for idx, (pdf_paths, code) in enumerate(jobs, start=1):
